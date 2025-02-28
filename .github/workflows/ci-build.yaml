@@ -1,11 +1,11 @@
 name: CI Build App
 
-on:
-  push:
-    branches: [master]
-    paths:
-      - 'src/**'
-  pull_request:
+# on:
+#   push:
+#     branches: [master]
+#     paths:
+#       - 'src/**'
+#   pull_request:
 
 env:
   IMAGE_REG: ghcr.io
