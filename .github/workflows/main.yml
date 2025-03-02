@@ -34,7 +34,7 @@ jobs:
           echo "PRIVATE_KEY=$(cat ~/.ssh/azure_vm_key)" >> $GITHUB_ENV
 
       - name: Upload SSH Key to Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ssh-key
           path: ~/.ssh/azure_vm_key
