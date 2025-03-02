@@ -25,17 +25,17 @@ jobs:
         run: |
           az group create --name python-app-rg --location eastus
 
-      # ✅ Create Azure VM with correct Ubuntu image
+      # ✅ Create Azure VM with Correct Image & Size
       - name: Create Azure VM
         run: |
           az vm create \
             --resource-group python-app-rg \
             --name python-app-vm \
-            --image Ubuntu2204 \  # ✅ Corrected image
+            --image Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest \  # ✅ Fixed image format
             --admin-username azureuser \
             --generate-ssh-keys \
             --public-ip-sku Standard \
-            --size Standard_B1s
+            --size Standard_B2s  # ✅ More performance
 
       # ✅ Get VM Public IP and store it in GitHub output
       - name: Get Public IP of Azure VM
