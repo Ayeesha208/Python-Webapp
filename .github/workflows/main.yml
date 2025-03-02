@@ -1,6 +1,5 @@
 name: Deploy Python App to Azure VM
 
-
 on:
   push:
     branches:
@@ -34,6 +33,12 @@ jobs:
           ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ""
           echo "PRIVATE_KEY=$(cat ~/.ssh/azure_vm_key)" >> $GITHUB_ENV
 
+      - name: Upload SSH Key to Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ssh-key
+          path: ~/.ssh/azure_vm_key
+
       - name: Create Azure VM
         run: |
           az vm create \
@@ -66,13 +71,8 @@ jobs:
             sudo apt install python3 python3-pip python3-venv git -y
 
       - name: Copy Application Code to VM
-        uses: appleboy/scp-action@v0.2.1
-        with:
-          host: ${{ env.VM_IP }}
-          username: azureuser
-          key: ${{ env.PRIVATE_KEY }}
-          source: "."
-          target: "~/app"
+        run: |
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" . azureuser@${{ env.VM_IP }}:~/app/
 
       - name: Install Requirements and Start App
         uses: appleboy/ssh-action@v0.1.7
