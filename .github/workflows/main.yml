@@ -10,33 +10,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ✅ Checkout the repository
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # ✅ Login to Azure using secrets
+      # ✅ Login to Azure with correct JSON format
       - name: Login to Azure
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # ✅ Create Azure Resource Group
+      # ✅ Create Resource Group
       - name: Create Resource Group
         run: |
           az group create --name python-app-rg --location eastus
 
-      # ✅ Create Azure VM
+      # ✅ Create Azure VM with correct Ubuntu image
       - name: Create Azure VM
         run: |
           az vm create \
             --resource-group python-app-rg \
             --name python-app-vm \
-            --image UbuntuLTS \
+            --image Ubuntu2204 \  # ✅ Corrected image
             --admin-username azureuser \
             --generate-ssh-keys \
             --public-ip-sku Standard \
             --size Standard_B1s
 
-      # ✅ Get VM Public IP and store it in GitHub env
+      # ✅ Get VM Public IP and store it in GitHub output
       - name: Get Public IP of Azure VM
         id: getip
         run: |
@@ -48,14 +49,13 @@ jobs:
           echo "VM IP Address: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      # ✅ Store SSH Key as Artifact for reuse
+      # ✅ Save SSH Key as an Artifact
       - name: Save SSH Key as an Artifact
         run: |
           mkdir -p ~/.ssh
           az vm ssh-key export --resource-group python-app-rg --name python-app-vm --file ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-        env:
-          AZURE_SSH_KEY: ${{ secrets.AZURE_SSH_KEY }}
+          echo "SSH key saved."
 
       - name: Upload SSH Key to Artifacts
         uses: actions/upload-artifact@v4
@@ -63,24 +63,34 @@ jobs:
           name: ssh-key
           path: ~/.ssh/id_rsa
 
+      # ✅ Download SSH Key from Artifacts
+      - name: Download SSH Key
+        uses: actions/download-artifact@v4
+        with:
+          name: ssh-key
+          path: ~/.ssh
+
+      - name: Set SSH Key Permissions
+        run: chmod 600 ~/.ssh/id_rsa
+
       # ✅ Install Dependencies on VM using SSH
       - name: Install Dependencies on VM
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ~/.ssh/id_rsa
           script: |
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
 
-      # ✅ Copy Application Code to VM
+      # ✅ Copy application code to VM
       - name: Copy Application Code to VM
         uses: appleboy/scp-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ~/.ssh/id_rsa
           source: "."
           target: "~/app"
 
@@ -90,7 +100,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ~/.ssh/id_rsa
           script: |
             cd ~/app
             python3 -m venv venv
