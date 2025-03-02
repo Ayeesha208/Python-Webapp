@@ -17,16 +17,12 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v1
         with:
-          creds: >
-            {"clientId":"${{ secrets.AZURE_CLIENT_ID }}",
-            "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
-            "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
-            "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       # Create Azure Resource Group
       - name: Create Resource Group
         run: |
-          az group create --name python-app-rg --location eastus
+          az group create --name python-app-rg --location eastus || echo "Resource group already exists"
 
       # Create Azure VM
       - name: Create Azure VM
@@ -38,9 +34,9 @@ jobs:
             --admin-username azureuser \
             --generate-ssh-keys \
             --public-ip-sku Standard \
-            --size Standard_B1s
+            --size Standard_B1s || echo "VM already exists"
 
-      # Get VM Public IP and store it in GitHub output
+      # Get VM Public IP and store it as an output variable
       - name: Get Public IP of Azure VM
         id: getip
         run: |
@@ -52,21 +48,13 @@ jobs:
           echo "VM IP Address: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      # Download SSH private key and store it as an artifact
-      - name: Save SSH Key as an Artifact
+      # Ensure SSH key is available
+      - name: Configure SSH Key
         run: |
           mkdir -p ~/.ssh
-          az vm ssh-key export --resource-group python-app-rg --name python-app-vm --file ~/.ssh/id_rsa
+          echo "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo "SSH key saved."
-        env:
-          AZURE_SSH_KEY: ${{ secrets.AZURE_SSH_KEY }}
-
-      - name: Upload SSH Key to Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssh-key
-          path: ~/.ssh/id_rsa
+          echo "SSH key configured."
 
       # Install Dependencies on VM using SSH
       - name: Install Dependencies on VM
@@ -74,9 +62,9 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
           script: |
-            sudo apt update
+            sudo apt update -y
             sudo apt install python3 python3-pip python3-venv git -y
 
       # Copy application code to VM
@@ -85,7 +73,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
           source: "."
           target: "~/app"
 
@@ -95,7 +83,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
           script: |
             cd ~/app
             python3 -m venv venv
@@ -110,4 +98,4 @@ jobs:
           az vm open-port \
             --resource-group python-app-rg \
             --name python-app-vm \
-            --port 8000
+            --port 8000 || echo "Port already open"
