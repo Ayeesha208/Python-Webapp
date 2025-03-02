@@ -13,31 +13,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
+      - name: Construct Azure Credentials
+        run: |
+          echo '{
+            "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+            "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+            "tenantId": "${{ secrets.AZURE_TENANT_ID }}",
+            "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          }' > azure_credentials.json
+
       - name: Login to Azure
         uses: azure/login@v1
         with:
-          creds: |
-            {
-              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId": "${{ secrets.AZURE_TENANT_ID }}",
-              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-            }
+          creds: ${{ secrets.AZURE_CLIENT_ID && secrets.AZURE_CLIENT_SECRET && secrets.AZURE_TENANT_ID && secrets.AZURE_SUBSCRIPTION_ID && format('{"clientId":"{0}","clientSecret":"{1}","tenantId":"{2}","subscriptionId":"{3}"}', secrets.AZURE_CLIENT_ID, secrets.AZURE_CLIENT_SECRET, secrets.AZURE_TENANT_ID, secrets.AZURE_SUBSCRIPTION_ID) }}
 
       - name: Create Resource Group
-        run: |
-          az group create --name python-app-rg --location eastus
-
-      - name: Generate SSH Key
-        run: |
-          ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ""
-          echo "PRIVATE_KEY=$(cat ~/.ssh/azure_vm_key)" >> $GITHUB_ENV
-
-      - name: Upload SSH Key to Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssh-key
-          path: ~/.ssh/azure_vm_key
+        run: az group create --name python-app-rg --location eastus
 
       - name: Create Azure VM
         run: |
@@ -46,7 +37,7 @@ jobs:
             --name python-app-vm \
             --image UbuntuLTS \
             --admin-username azureuser \
-            --ssh-key-values ~/.ssh/azure_vm_key.pub \
+            --generate-ssh-keys \
             --public-ip-sku Standard \
             --size Standard_B1s
 
@@ -58,28 +49,45 @@ jobs:
             --name python-app-vm \
             --query "[].virtualMachine.network.publicIpAddresses[0].ipAddress" \
             --output tsv)
-          echo "VM_IP=$ip" >> $GITHUB_ENV
+          echo "::set-output name=ip::$ip"
+
+      - name: Store SSH Key in Artifact
+        run: |
+          mkdir -p ~/.ssh
+          cp ~/.ssh/id_rsa id_rsa
+          cp ~/.ssh/id_rsa.pub id_rsa.pub
+
+      - name: Upload SSH Key to Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-keys
+          path: id_rsa
 
       - name: Install Dependencies on VM
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.VM_IP }}
+          host: ${{ steps.getip.outputs.ip }}
           username: azureuser
-          key: ${{ env.PRIVATE_KEY }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
           script: |
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
 
       - name: Copy Application Code to VM
-        run: |
-          rsync -avz -e "ssh -o StrictHostKeyChecking=no" . azureuser@${{ env.VM_IP }}:~/app/
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ steps.getip.outputs.ip }}
+          username: azureuser
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          source: "."
+          target: "~/app"
 
       - name: Install Requirements and Start App
         uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.VM_IP }}
+          host: ${{ steps.getip.outputs.ip }}
           username: azureuser
-          key: ${{ env.PRIVATE_KEY }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
           script: |
             cd ~/app
             python3 -m venv venv
