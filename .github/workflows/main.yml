@@ -60,20 +60,16 @@ jobs:
 
       - name: Ensure SSH Key Exists
         run: |
-          mkdir -p ~/.ssh
           if [ ! -f ~/.ssh/id_rsa ]; then
             echo "SSH key not found, generating one..."
             ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           fi
-          ls -lah ~/.ssh
 
       - name: Upload SSH Key as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-key
-          path: |
-            ~/.ssh/id_rsa
-            ~/.ssh/id_rsa.pub
+          path: ~/.ssh/id_rsa
 
       - name: Wait for Artifact to Be Available
         run: sleep 5
@@ -82,23 +78,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ssh-key
-          path: ./ssh-key
+          path: ~/.ssh
 
-      - name: Move SSH Key to Correct Location
-        run: |
-          mkdir -p ~/.ssh
-          mv ./ssh-key/id_rsa ~/.ssh/id_rsa
-          mv ./ssh-key/id_rsa.pub ~/.ssh/id_rsa.pub
-          chmod 600 ~/.ssh/id_rsa
-          chmod 644 ~/.ssh/id_rsa.pub
-          ls -lah ~/.ssh
+      - name: Set SSH Key Permissions
+        run: chmod 600 ~/.ssh/id_rsa
 
       - name: Install Dependencies on VM using SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "$(cat ~/.ssh/id_rsa)"
+          key: "${{ secrets.AZURE_SSH_KEY }}"
           script: |
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
@@ -108,7 +98,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "$(cat ~/.ssh/id_rsa)"
+          key: "${{ secrets.AZURE_SSH_KEY }}"
           source: "."
           target: "~/app"
 
@@ -117,7 +107,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "$(cat ~/.ssh/id_rsa)"
+          key: "${{ secrets.AZURE_SSH_KEY }}"
           script: |
             cd ~/app
             python3 -m venv venv
