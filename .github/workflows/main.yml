@@ -3,7 +3,7 @@ name: Deploy Python App to Azure VM
 on:
   push:
     branches:
-      - main  # Change to your deployment branch
+      - main
 
 jobs:
   deploy:
@@ -13,7 +13,6 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # Login to Azure with corrected JSON format
       - name: Login to Azure
         uses: azure/login@v1
         with:
@@ -23,12 +22,10 @@ jobs:
             "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
             "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"}
 
-      # Create Azure Resource Group
       - name: Create Resource Group
         run: |
           az group create --name python-app-rg --location eastus
 
-      # Create Azure VM with corrected image name
       - name: Create Azure VM
         run: |
           az vm create \
@@ -36,11 +33,17 @@ jobs:
             --name python-app-vm \
             --image Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest \
             --admin-username azureuser \
-            --generate-ssh-keys \
+            --size Standard_B2s \
             --public-ip-sku Standard \
-            --size Standard_B2s
+            --ssh-key-value "${{ secrets.AZURE_SSH_PUBLIC_KEY }}"
 
-      # Get VM Public IP and store it in GitHub output
+      - name: Open SSH Port (22)
+        run: |
+          az vm open-port \
+            --resource-group python-app-rg \
+            --name python-app-vm \
+            --port 22
+
       - name: Get Public IP of Azure VM
         id: getip
         run: |
@@ -52,7 +55,6 @@ jobs:
           echo "VM IP Address: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      # Install Dependencies on VM using SSH
       - name: Install Dependencies on VM
         uses: appleboy/ssh-action@master
         with:
@@ -63,7 +65,6 @@ jobs:
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
 
-      # Copy application code to VM
       - name: Copy Application Code to VM
         uses: appleboy/scp-action@master
         with:
@@ -73,7 +74,6 @@ jobs:
           source: "."
           target: "~/app"
 
-      # Install dependencies and start Python app on VM
       - name: Install Requirements and Start App
         uses: appleboy/ssh-action@master
         with:
@@ -88,7 +88,6 @@ jobs:
             pip install -r requirements.txt
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
 
-      # Open Port 8000 for Web Access
       - name: Open Port 8000 for Web Access
         run: |
           az vm open-port \
