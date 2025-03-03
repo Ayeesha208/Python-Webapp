@@ -3,62 +3,53 @@ name: Deploy Python App to Azure VM
 on:
   push:
     branches:
-      - main
+      - main  # Change this to your deployment branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
+      # Login to Azure using AZURE_CREDENTIALS secret
       - name: Login to Azure
         uses: azure/login@v1
         with:
-          creds: > 
-            {
-              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
-              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-            }
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Check if Resource Group exists
+      # Create Azure Resource Group
+      - name: Create Resource Group
         run: |
-          if az group show --name demo-rg --query 'name' --output tsv; then
-            echo "Resource Group already exists"
-          else
-            echo "Creating Resource Group..."
-            az group create --name demo-rg --location eastus
-          fi
+          az group create --name python-app-rg --location eastus
 
-      - name: Check if Virtual Machine exists
+      # Create Azure VM
+      - name: Create Azure VM
         run: |
-          if az vm show --resource-group demo-rg --name demo-vm --query 'name' --output tsv; then
-            echo "Virtual Machine already exists"
-          else
-            echo "Creating Virtual Machine..."
-            az vm create \
-              --resource-group demo-rg \
-              --name demo-vm \
-              --image Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest \
-              --admin-username azureuser \
-              --generate-ssh-keys \
-              --public-ip-sku Standard \
-              --size Standard_B2s
-          fi
+          az vm create \
+            --resource-group "python-app-rg" \
+            --name "python-app-vm" \
+            --image "Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest" \
+            --admin-username "azureuser" \
+            --generate-ssh-keys \
+            --public-ip-sku "Standard" \
+            --size "Standard_B2s"
 
-      - name: Get VM Public IP and store it in GitHub output
+      # Get VM Public IP
+      - name: Get Public IP of Azure VM
+        id: getip
         run: |
           ip=$(az vm list-ip-addresses \
-            --resource-group demo-rg \
-            --name demo-vm \
+            --resource-group "python-app-rg" \
+            --name "python-app-vm" \
             --query "[].virtualMachine.network.publicIpAddresses[0].ipAddress" \
             --output tsv)
           echo "VM IP Address: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Install Dependencies on VM using SSH
+      # Install Dependencies on VM using SSH
+      - name: Install Dependencies on VM
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
@@ -68,7 +59,8 @@ jobs:
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
 
-      - name: Copy application code to VM
+      # Copy Application Code to VM
+      - name: Copy Application Code to VM
         uses: appleboy/scp-action@master
         with:
           host: ${{ env.ip }}
@@ -77,7 +69,8 @@ jobs:
           source: "."
           target: "~/app"
 
-      - name: Install dependencies and start Python app on VM
+      # Install Requirements and Start App
+      - name: Install Requirements and Start App
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
@@ -91,9 +84,10 @@ jobs:
             pip install -r requirements.txt
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
 
+      # Open Port 8000 for Web Access
       - name: Open Port 8000 for Web Access
         run: |
           az vm open-port \
-            --resource-group demo-rg \
-            --name demo-vm \
+            --resource-group "python-app-rg" \
+            --name "python-app-vm" \
             --port 8000
