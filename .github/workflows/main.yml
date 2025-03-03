@@ -20,14 +20,7 @@ jobs:
           cat ~/.ssh/id_rsa.pub
           echo "SSH key pair generated."
 
-      - name: Store Private Key in GitHub Secret
-        run: |
-          gh auth login --with-token <<< "${{ secrets.TOKEN_GITHUB }}"
-          gh secret set SSH_PRIVATE_KEY --body "$(cat ~/.ssh/id_rsa)"
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
-
-      - name: Upload SSH Key as Artifact
+      - name: Upload SSH Key as Artifact (Optional)
         uses: actions/upload-artifact@v4
         with:
           name: ssh-key
@@ -92,7 +85,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "${{ secrets.SSH_PRIVATE_KEY }}"
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
@@ -102,7 +95,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "${{ secrets.SSH_PRIVATE_KEY }}"
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "."
           target: "~/app"
 
@@ -111,7 +104,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "${{ secrets.SSH_PRIVATE_KEY }}"
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/app
             python3 -m venv venv
