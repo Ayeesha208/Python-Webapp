@@ -78,6 +78,12 @@ jobs:
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
 
+      - name: Write SSH Key to File
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
       - name: Manually Add SSH Public Key to VM
         run: |
           PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
