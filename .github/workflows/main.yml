@@ -1,6 +1,5 @@
 name: Deploy Python App to Azure VM
 
-
 on:
   push:
     branches:
@@ -64,9 +63,33 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Ensure SSH Port is Open
+      - name: Open SSH Port 22
         run: |
-          az vm open-port --resource-group demo-rg --name demo-vm --port 22
+          az network nsg rule create \
+            --resource-group demo-rg \
+            --nsg-name demo-vmNSG \
+            --name AllowSSH \
+            --priority 1001 \
+            --direction Inbound \
+            --access Allow \
+            --protocol Tcp \
+            --source-port-range "*" \
+            --destination-port-range 22 \
+            --output none || true
+
+      - name: Open Port 8000 for Web Access
+        run: |
+          az network nsg rule create \
+            --resource-group demo-rg \
+            --nsg-name demo-vmNSG \
+            --name AllowWeb \
+            --priority 1002 \
+            --direction Inbound \
+            --access Allow \
+            --protocol Tcp \
+            --source-port-range "*" \
+            --destination-port-range 8000 \
+            --output none || true
 
       - name: Manually Add SSH Public Key to VM
         run: |
@@ -86,7 +109,8 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
@@ -96,7 +120,8 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
           source: "."
           target: "~/app"
 
@@ -105,7 +130,8 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             cd ~/app
             python3 -m venv venv
@@ -113,7 +139,3 @@ jobs:
             pip install --upgrade pip
             pip install -r requirements.txt
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
-
-      - name: Open Port 8000 for Web Access
-        run: |
-          az vm open-port --resource-group demo-rg --name demo-vm --port 8000
