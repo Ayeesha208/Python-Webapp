@@ -35,7 +35,6 @@ jobs:
             --name demo-vm \
             --image UbuntuLTS \
             --admin-username azureuser \
-            --generate-ssh-keys \
             --public-ip-sku Standard \
             --size Standard_B2s \
             --output none
@@ -50,39 +49,25 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Generate SSH Key (if not exists)
+      - name: Ensure SSH Port is Open
+        run: |
+          az vm open-port --resource-group demo-rg --name demo-vm --port 22
+
+      - name: Write SSH Private Key to File (Fix Encoding Issue)
         run: |
           mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          if [ ! -f ~/.ssh/id_rsa ]; then
-            ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
-          fi
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
+          ssh-keygen -y -f ~/.ssh/id_rsa > ~/.ssh/id_rsa.pub
           cat ~/.ssh/id_rsa.pub
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
 
       - name: Upload SSH Key as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-key
           path: ~/.ssh/id_rsa
-
-      - name: Download SSH Key Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ssh-key
-          path: ~/.ssh
-
-      - name: Fix SSH Key Permissions
-        run: |
-          chmod 600 ~/.ssh/id_rsa
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-
-      - name: Write SSH Key to File
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
 
       - name: Manually Add SSH Public Key to VM
         run: |
@@ -93,10 +78,6 @@ jobs:
             --command-id RunShellScript \
             --scripts "mkdir -p /home/azureuser/.ssh && echo \"$PUBLIC_KEY\" >> /home/azureuser/.ssh/authorized_keys && chmod 600 /home/azureuser/.ssh/authorized_keys && chown azureuser:azureuser /home/azureuser/.ssh/authorized_keys"
 
-      - name: Ensure SSH Port is Open
-        run: |
-          az vm open-port --resource-group demo-rg --name demo-vm --port 22
-
       - name: Verify SSH Connection
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
@@ -106,7 +87,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ~/.ssh/id_rsa
+          key: "${{ secrets.SSH_PRIVATE_KEY }}"
           script: |
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
@@ -116,7 +97,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ~/.ssh/id_rsa
+          key: "${{ secrets.SSH_PRIVATE_KEY }}"
           source: "."
           target: "~/app"
 
@@ -125,7 +106,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ~/.ssh/id_rsa
+          key: "${{ secrets.SSH_PRIVATE_KEY }}"
           script: |
             cd ~/app
             python3 -m venv venv
