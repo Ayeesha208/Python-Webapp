@@ -48,20 +48,21 @@ jobs:
               --size Standard_B2s
           fi
 
-      - name: Get VM Public IP and store it in GitHub output
+      - name: Get VM Public IP
         run: |
           ip=$(az vm list-ip-addresses \
             --resource-group demo-rg \
             --name demo-vm \
             --query "[].virtualMachine.network.publicIpAddresses[0].ipAddress" \
             --output tsv)
-          echo "VM IP Address: $ip"
+          echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Ensure SSH Key Exists
+      - name: Generate SSH Key (if not exists)
         run: |
+          mkdir -p ~/.ssh
           if [ ! -f ~/.ssh/id_rsa ]; then
-            echo "SSH key not found, generating one..."
+            echo "Generating new SSH key..."
             ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           fi
 
@@ -71,9 +72,6 @@ jobs:
           name: ssh-key
           path: ~/.ssh/id_rsa
 
-      - name: Wait for Artifact to Be Available
-        run: sleep 5
-
       - name: Download SSH Key Artifact
         uses: actions/download-artifact@v4
         with:
@@ -81,24 +79,27 @@ jobs:
           path: ~/.ssh
 
       - name: Set SSH Key Permissions
-        run: chmod 600 ~/.ssh/id_rsa
+        run: |
+          chmod 600 ~/.ssh/id_rsa
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_rsa
 
       - name: Install Dependencies on VM using SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "${{ secrets.AZURE_SSH_KEY }}"
+          key: ${{ secrets.GITHUB_WORKSPACE }}/.ssh/id_rsa
           script: |
             sudo apt update
-            sudo apt install python3 python3-pip python3-venv git -y
+            sudo apt install -y python3 python3-pip python3-venv git
 
       - name: Copy application code to VM
         uses: appleboy/scp-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "${{ secrets.AZURE_SSH_KEY }}"
+          key: ${{ secrets.GITHUB_WORKSPACE }}/.ssh/id_rsa
           source: "."
           target: "~/app"
 
@@ -107,7 +108,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: "${{ secrets.AZURE_SSH_KEY }}"
+          key: ${{ secrets.GITHUB_WORKSPACE }}/.ssh/id_rsa
           script: |
             cd ~/app
             python3 -m venv venv
@@ -118,7 +119,4 @@ jobs:
 
       - name: Open Port 8000 for Web Access
         run: |
-          az vm open-port \
-            --resource-group demo-rg \
-            --name demo-vm \
-            --port 8000
+          az vm open-port --resource-group demo-rg --name demo-vm --port 8000
