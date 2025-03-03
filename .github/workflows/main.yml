@@ -28,7 +28,6 @@ jobs:
           if az group show --name demo-rg --query 'name' --output tsv; then
             echo "Resource Group already exists"
           else
-            echo "Creating Resource Group..."
             az group create --name demo-rg --location eastus
           fi
 
@@ -37,7 +36,6 @@ jobs:
           if az vm show --resource-group demo-rg --name demo-vm --query 'name' --output tsv; then
             echo "Virtual Machine already exists"
           else
-            echo "Creating Virtual Machine..."
             az vm create \
               --resource-group demo-rg \
               --name demo-vm \
@@ -58,29 +56,44 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Ensure SSH Key Exists & Is Configured
+      - name: Generate SSH Key (if not exists)
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           if [ ! -f ~/.ssh/id_rsa ]; then
-            echo "Generating new SSH key..."
             ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           fi
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Upload SSH Key as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-key
+          path: ~/.ssh/id_rsa
+
+      - name: Download SSH Key Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ssh-key
+          path: ~/.ssh
+
+      - name: Fix SSH Key Permissions
+        run: |
           chmod 600 ~/.ssh/id_rsa
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
 
       - name: Upload SSH Public Key to VM
         run: |
-          cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no azureuser@${{ env.ip }} \
-          "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys"
+          ssh-copy-id -i ~/.ssh/id_rsa.pub -o StrictHostKeyChecking=no azureuser@${{ env.ip }}
 
       - name: Ensure SSH Port is Open
         run: |
           az vm open-port --resource-group demo-rg --name demo-vm --port 22
 
       - name: Verify SSH Connection
-        run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
       - name: Install Dependencies on VM
         uses: appleboy/ssh-action@master
