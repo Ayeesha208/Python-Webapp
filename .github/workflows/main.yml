@@ -22,10 +22,10 @@ jobs:
 
       - name: Store Private Key in GitHub Secret
         run: |
-          gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+          gh auth login --with-token <<< "${{ secrets.TOKEN_GITHUB }}"
           gh secret set SSH_PRIVATE_KEY --body "$(cat ~/.ssh/id_rsa)"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
 
       - name: Upload SSH Key as Artifact
         uses: actions/upload-artifact@v4
