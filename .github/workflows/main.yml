@@ -1,4 +1,3 @@
-
 name: Deploy Python App to Azure VM
 
 on:
@@ -16,7 +15,7 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v1
         with:
-          creds: > 
+          creds: >
             {
               "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
               "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
@@ -59,12 +58,27 @@ jobs:
           echo "VM IP Address: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
+      - name: Upload SSH Key as Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ssh-key
+          path: ~/.ssh/id_rsa
+
+      - name: Download SSH Key Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: ssh-key
+          path: ~/.ssh
+
+      - name: Set SSH Key Permissions
+        run: chmod 600 ~/.ssh/id_rsa
+
       - name: Install Dependencies on VM using SSH
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: "$(cat ~/.ssh/id_rsa)"
           script: |
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
@@ -74,7 +88,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: "$(cat ~/.ssh/id_rsa)"
           source: "."
           target: "~/app"
 
@@ -83,7 +97,7 @@ jobs:
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_KEY }}
+          key: "$(cat ~/.ssh/id_rsa)"
           script: |
             cd ~/app
             python3 -m venv venv
