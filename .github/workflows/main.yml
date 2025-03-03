@@ -1,173 +1,99 @@
 name: Deploy Python App to Azure VM
 
- 
 on:
-
   push:
-
     branches:
+      - main
 
-      - main  # Change to your deployment branch
- 
 jobs:
-
   deploy:
-
     runs-on: ubuntu-latest
- 
     steps:
-
       - name: Checkout Code
-
         uses: actions/checkout@v3
- 
-      # Login to Azure with corrected JSON format
 
       - name: Login to Azure
-
         uses: azure/login@v1
-
         with:
+          creds: > 
+            {
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+            }
 
-          creds: >
-
-            {"clientId":"${{ secrets.AZURE_CLIENT_ID }}",
-
-            "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
-
-            "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
-
-            "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"}
- 
-      # Create Azure Resource Group
-
-      - name: Create Resource Group
-
+      - name: Check if Resource Group exists
         run: |
+          if az group show --name demo-rg --query 'name' --output tsv; then
+            echo "Resource Group already exists"
+          else
+            echo "Creating Resource Group..."
+            az group create --name demo-rg --location eastus
+          fi
 
-          az group create --name python-app-rg --location eastus
- 
-      # Create Azure VM with corrected image name
-
-      - name: Create Azure VM
-
+      - name: Check if Virtual Machine exists
         run: |
+          if az vm show --resource-group demo-rg --name demo-vm --query 'name' --output tsv; then
+            echo "Virtual Machine already exists"
+          else
+            echo "Creating Virtual Machine..."
+            az vm create \
+              --resource-group demo-rg \
+              --name demo-vm \
+              --image Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest \
+              --admin-username azureuser \
+              --generate-ssh-keys \
+              --public-ip-sku Standard \
+              --size Standard_B2s
+          fi
 
-          az vm create \
-
-            --resource-group python-app-rg \
-
-            --name python-app-vm \
-
-            --image Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest \
-
-            --admin-username azureuser \
-
-            --generate-ssh-keys \
-
-            --public-ip-sku Standard \
-
-            --size Standard_B2s
- 
-      # Get VM Public IP and store it in GitHub output
-
-      - name: Get Public IP of Azure VM
-
-        id: getip
-
+      - name: Get VM Public IP and store it in GitHub output
         run: |
-
           ip=$(az vm list-ip-addresses \
-
-            --resource-group python-app-rg \
-
-            --name python-app-vm \
-
+            --resource-group demo-rg \
+            --name demo-vm \
             --query "[].virtualMachine.network.publicIpAddresses[0].ipAddress" \
-
             --output tsv)
-
           echo "VM IP Address: $ip"
-
           echo "ip=$ip" >> $GITHUB_ENV
- 
-      # Install Dependencies on VM using SSH
 
-      - name: Install Dependencies on VM
-
+      - name: Install Dependencies on VM using SSH
         uses: appleboy/ssh-action@master
-
         with:
-
           host: ${{ env.ip }}
-
           username: azureuser
-
           key: ${{ secrets.AZURE_SSH_KEY }}
-
           script: |
-
             sudo apt update
-
             sudo apt install python3 python3-pip python3-venv git -y
- 
-      # Copy application code to VM
 
-      - name: Copy Application Code to VM
-
+      - name: Copy application code to VM
         uses: appleboy/scp-action@master
-
         with:
-
           host: ${{ env.ip }}
-
           username: azureuser
-
           key: ${{ secrets.AZURE_SSH_KEY }}
-
           source: "."
-
           target: "~/app"
- 
-      # Install dependencies and start Python app on VM
 
-      - name: Install Requirements and Start App
-
+      - name: Install dependencies and start Python app on VM
         uses: appleboy/ssh-action@master
-
         with:
-
           host: ${{ env.ip }}
-
           username: azureuser
-
           key: ${{ secrets.AZURE_SSH_KEY }}
-
           script: |
-
             cd ~/app
-
             python3 -m venv venv
-
             source venv/bin/activate
-
             pip install --upgrade pip
-
             pip install -r requirements.txt
-
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
- 
-      # Open Port 8000 for Web Access
 
       - name: Open Port 8000 for Web Access
-
         run: |
-
           az vm open-port \
-
-            --resource-group python-app-rg \
-
-            --name python-app-vm \
-
+            --resource-group demo-rg \
+            --name demo-vm \
             --port 8000
- 
