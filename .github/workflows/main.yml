@@ -3,7 +3,7 @@ name: Deploy Python App to Azure VM
 on:
   push:
     branches:
-      - main
+      - main  # Change this to your deployment branch if needed
 
 jobs:
   deploy:
@@ -16,33 +16,28 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v1
         with:
-          creds: >
-            {"clientId":"${{ secrets.AZURE_CLIENT_ID }}",
-            "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
-            "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
-            "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"}
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Create Resource Group
         run: |
           az group create --name python-app-rg --location eastus
+
+      - name: Generate SSH Key
+        run: |
+          ssh-keygen -t rsa -b 4096 -f ~/.ssh/azure_vm_key -N ""
+          echo "PRIVATE_KEY=$(cat ~/.ssh/azure_vm_key)" >> $GITHUB_ENV
+          echo "PUBLIC_KEY=$(cat ~/.ssh/azure_vm_key.pub)" >> $GITHUB_ENV
 
       - name: Create Azure VM
         run: |
           az vm create \
             --resource-group python-app-rg \
             --name python-app-vm \
-            --image Canonical:0001-com-ubuntu-server-jammy:22_04-lts-gen2:latest \
+            --image UbuntuLTS \
             --admin-username azureuser \
-            --size Standard_B2s \
+            --ssh-key-values "$PUBLIC_KEY" \
             --public-ip-sku Standard \
-            --ssh-key-value "$(cat ~/.ssh/id_rsa.pub)"
-
-      - name: Open SSH Port (22)
-        run: |
-          az vm open-port \
-            --resource-group python-app-rg \
-            --name python-app-vm \
-            --port 22
+            --size Standard_B1s
 
       - name: Get Public IP of Azure VM
         id: getip
@@ -53,39 +48,36 @@ jobs:
             --query "[].virtualMachine.network.publicIpAddresses[0].ipAddress" \
             --output tsv)
           echo "VM IP Address: $ip"
-          echo "ip=$ip" >> $GITHUB_ENV
+          echo "VM_IP=$ip" >> $GITHUB_ENV
 
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
+      - name: Add SSH Key to GitHub Secrets (Optional)
+        run: echo "$PRIVATE_KEY" > private_key && chmod 600 private_key
 
       - name: Install Dependencies on VM
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.ip }}
+          host: ${{ env.VM_IP }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          key: ${{ env.PRIVATE_KEY }}
           script: |
             sudo apt update
             sudo apt install python3 python3-pip python3-venv git -y
 
       - name: Copy Application Code to VM
-        uses: appleboy/scp-action@master
+        uses: appleboy/scp-action@v0.2.1
         with:
-          host: ${{ env.ip }}
+          host: ${{ env.VM_IP }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          key: ${{ env.PRIVATE_KEY }}
           source: "."
           target: "~/app"
 
       - name: Install Requirements and Start App
-        uses: appleboy/ssh-action@master
+        uses: appleboy/ssh-action@v0.1.7
         with:
-          host: ${{ env.ip }}
+          host: ${{ env.VM_IP }}
           username: azureuser
-          key: ${{ secrets.AZURE_SSH_PRIVATE_KEY }}
+          key: ${{ env.PRIVATE_KEY }}
           script: |
             cd ~/app
             python3 -m venv venv
