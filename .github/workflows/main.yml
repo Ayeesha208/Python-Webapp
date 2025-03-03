@@ -23,7 +23,7 @@ jobs:
               "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"
             }
 
-      - name: Check if Resource Group exists
+      - name: Ensure Resource Group Exists
         run: |
           if az group show --name demo-rg --query 'name' --output tsv; then
             echo "Resource Group already exists"
@@ -32,7 +32,7 @@ jobs:
             az group create --name demo-rg --location eastus
           fi
 
-      - name: Check if Virtual Machine exists
+      - name: Ensure Virtual Machine Exists
         run: |
           if az vm show --resource-group demo-rg --name demo-vm --query 'name' --output tsv; then
             echo "Virtual Machine already exists"
@@ -58,60 +58,55 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Generate SSH Key (if not exists)
+      - name: Ensure SSH Key Exists & Is Configured
         run: |
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           if [ ! -f ~/.ssh/id_rsa ]; then
             echo "Generating new SSH key..."
             ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           fi
-
-      - name: Upload SSH Key as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssh-key
-          path: ~/.ssh/id_rsa
-
-      - name: Download SSH Key Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ssh-key
-          path: ~/.ssh
-
-      - name: Set SSH Key Permissions
-        run: |
           chmod 600 ~/.ssh/id_rsa
           eval "$(ssh-agent -s)"
           ssh-add ~/.ssh/id_rsa
 
+      - name: Upload SSH Public Key to VM
+        run: |
+          cat ~/.ssh/id_rsa.pub | ssh -o StrictHostKeyChecking=no azureuser@${{ env.ip }} \
+          "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys"
+
+      - name: Ensure SSH Port is Open
+        run: |
+          az vm open-port --resource-group demo-rg --name demo-vm --port 22
+
       - name: Verify SSH Connection
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
-      - name: Install Dependencies on VM using SSH
+      - name: Install Dependencies on VM
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.GITHUB_WORKSPACE }}/.ssh/id_rsa
+          key: ~/.ssh/id_rsa
           script: |
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
 
-      - name: Copy application code to VM
+      - name: Copy Application Code to VM
         uses: appleboy/scp-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.GITHUB_WORKSPACE }}/.ssh/id_rsa
+          key: ~/.ssh/id_rsa
           source: "."
           target: "~/app"
 
-      - name: Install dependencies and start Python app on VM
+      - name: Install Dependencies and Start Python App
         uses: appleboy/ssh-action@master
         with:
           host: ${{ env.ip }}
           username: azureuser
-          key: ${{ secrets.GITHUB_WORKSPACE }}/.ssh/id_rsa
+          key: ~/.ssh/id_rsa
           script: |
             cd ~/app
             python3 -m venv venv
