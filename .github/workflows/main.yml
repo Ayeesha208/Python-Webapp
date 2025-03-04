@@ -85,21 +85,18 @@ jobs:
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
       - name: Install Dependencies and Deploy App
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ env.ip }}
-          username: azureuser
-          key: |
-            ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
+            set -e
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
             mkdir -p ~/app
             cd ~/app
             rm -rf *
-            git clone https://${{ secrets.GH_PAT }}@github.com/your-username/your-repo.git .
+            git clone https://${{ secrets.TOKEN_GITHUB }}@github.com/Ayeesha208/Python-Webapp.git .
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements.txt
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
+          EOF
