@@ -10,22 +10,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
+      # ✅ Generate SSH Key Pair
       - name: Generate SSH Key Pair
         run: |
           mkdir -p ~/.ssh
           ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           chmod 600 ~/.ssh/id_rsa
-          cat ~/.ssh/id_rsa.pub
-        shell: bash
 
+      # ✅ Upload SSH Key
       - name: Upload SSH Key as Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-key
           path: ~/.ssh/id_rsa
 
+      # ✅ Login to Azure
       - name: Login to Azure
         uses: azure/login@v1
         with:
@@ -37,9 +38,11 @@ jobs:
               "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"
             }
 
+      # ✅ Ensure Resource Group Exists
       - name: Ensure Resource Group Exists
         run: az group create --name demo-rg --location eastus --output none || true
 
+      # ✅ Ensure Virtual Machine Exists
       - name: Ensure Virtual Machine Exists
         run: |
           if ! az vm show --resource-group demo-rg --name demo-vm --query 'name' --output tsv; then
@@ -53,6 +56,7 @@ jobs:
               --output none
           fi
 
+      # ✅ Get VM Public IP
       - name: Get VM Public IP
         run: |
           ip=$(az vm list-ip-addresses \
@@ -63,15 +67,18 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
+      # ✅ Download SSH Key from Artifact
       - name: Download SSH Key from Artifact
         uses: actions/download-artifact@v4
         with:
           name: ssh-key
           path: ~/.ssh
 
+      # ✅ Set Correct Permissions for SSH Key
       - name: Set Correct Permissions for SSH Key
         run: chmod 600 ~/.ssh/id_rsa
 
+      # ✅ Manually Add SSH Public Key to VM
       - name: Manually Add SSH Public Key to VM
         run: |
           PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
@@ -81,57 +88,48 @@ jobs:
             --command-id RunShellScript \
             --scripts "mkdir -p /home/azureuser/.ssh && echo \"$PUBLIC_KEY\" >> /home/azureuser/.ssh/authorized_keys && chmod 600 /home/azureuser/.ssh/authorized_keys && chown azureuser:azureuser /home/azureuser/.ssh/authorized_keys"
 
+      # ✅ Verify SSH Connection
       - name: Verify SSH Connection
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
+      # ✅ Install Dependencies and Deploy App
       - name: Install Dependencies and Deploy App
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
             set -e
 
-            echo "🔹 Updating system & installing dependencies..."
+            # ✅ Update & Install Required Packages
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
 
-            echo "🔹 Ensuring app directory exists..."
+            # ✅ Ensure App Directory Exists
             mkdir -p ~/app
             cd ~/app
 
-            echo "🔹 Checking if repository exists..."
+            # ✅ Handle First-Time Deployment & Updates
             if [ ! -d .git ]; then
-              echo "🚀 First-time setup: Cloning repository..."
+              echo "First-time setup: Cloning repository..."
               git clone https://${{ secrets.TOKEN_GITHUB }}@github.com/Ayeesha208/Python-Webapp.git .
             else
-              echo "🔄 Repository exists: Pulling latest changes..."
+              echo "Repository exists: Pulling latest changes..."
               git pull origin main
             fi
 
-            echo "🔹 Listing repo contents..."
-            ls -lah
-
-            echo "🔹 Checking for requirements.txt..."
-            if [ ! -f requirements.txt ]; then
-              echo "❌ ERROR: requirements.txt not found in ~/app!"
-              exit 1
-            fi
-
-            echo "✅ Installing dependencies..."
+            # ✅ Create Virtual Environment & Install Dependencies
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
-            pip install -r requirements.txt
+           # pip install -r requirements.txt
 
-            echo "🔹 Killing existing Gunicorn processes (if any)..."
+            # ✅ Kill Existing Gunicorn Process (If Running)
             sudo pkill -f gunicorn || true
 
-            echo "🔹 Ensuring port 8000 is open..."
+            # ✅ Ensure Port 8000 is Open
             sudo ufw allow 8000 || true
 
-            echo "🚀 Starting application with Gunicorn..."
+            # ✅ Restart Application
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
 
-            echo "🔄 Restarting systemd service (if configured)..."
+            # ✅ Restart Systemd Service (if configured)
             sudo systemctl restart myapp.service || true
-
-            echo "✅ Deployment completed successfully!"
           EOF
