@@ -12,19 +12,12 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Generate SSH Key
+      - name: Generate SSH Key Pair
         run: |
           mkdir -p ~/.ssh
           ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           chmod 600 ~/.ssh/id_rsa
-          cat ~/.ssh/id_rsa.pub
           echo "SSH key pair generated."
-
-      - name: Upload SSH Key as Artifact (Optional)
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssh-key
-          path: ~/.ssh/id_rsa
 
       - name: Login to Azure
         uses: azure/login@v1
@@ -63,34 +56,6 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      - name: Open SSH Port 22
-        run: |
-          az network nsg rule create \
-            --resource-group demo-rg \
-            --nsg-name demo-vmNSG \
-            --name AllowSSH \
-            --priority 1001 \
-            --direction Inbound \
-            --access Allow \
-            --protocol Tcp \
-            --source-port-range "*" \
-            --destination-port-range 22 \
-            --output none || true
-
-      - name: Open Port 8000 for Web Access
-        run: |
-          az network nsg rule create \
-            --resource-group demo-rg \
-            --nsg-name demo-vmNSG \
-            --name AllowWeb \
-            --priority 1002 \
-            --direction Inbound \
-            --access Allow \
-            --protocol Tcp \
-            --source-port-range "*" \
-            --destination-port-range 8000 \
-            --output none || true
-
       - name: Manually Add SSH Public Key to VM
         run: |
           PUBLIC_KEY=$(cat ~/.ssh/id_rsa.pub)
@@ -104,38 +69,19 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
-      - name: Install Dependencies on VM
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ env.ip }}
-          username: azureuser
-          key: |
-            ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
+      - name: Install Dependencies and Deploy App
+        run: |
+          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
+            set -e
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
-
-      - name: Copy Application Code to VM
-        uses: appleboy/scp-action@master
-        with:
-          host: ${{ env.ip }}
-          username: azureuser
-          key: |
-            ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "."
-          target: "~/app"
-
-      - name: Install Dependencies and Start Python App
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ env.ip }}
-          username: azureuser
-          key: |
-            ${{ secrets.SSH_PRIVATE_KEY }}
-          script: |
+            mkdir -p ~/app
             cd ~/app
+            rm -rf *
+            git clone https://github.com/your-repo/your-app.git .  # Replace with your repo
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
             pip install -r requirements.txt
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
+          EOF
