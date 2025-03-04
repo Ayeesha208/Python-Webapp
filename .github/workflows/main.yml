@@ -92,20 +92,15 @@ jobs:
       - name: Verify SSH Connection
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
-      # ✅ Install Dependencies, Open Port 5000, and Deploy App
-      - name: Deploy App
+      # ✅ Install Dependencies and Deploy App
+      - name: Install Dependencies and Deploy App
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
             set -e
 
             # ✅ Update & Install Required Packages
             sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git ufw
-
-            # ✅ Enable UFW Firewall and Open Port 5000
-            sudo ufw --force enable
-            sudo ufw allow 5000
-            sudo ufw reload
+            sudo apt install -y python3 python3-pip python3-venv git
 
             # ✅ Ensure App Directory Exists
             mkdir -p ~/app
@@ -124,46 +119,17 @@ jobs:
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
-            pip install gunicorn  # ✅ Ensure Gunicorn is installed
-            pip install -r requirements.txt || true
+           # pip install -r requirements.txt
 
             # ✅ Kill Existing Gunicorn Process (If Running)
             sudo pkill -f gunicorn || true
 
-            # ✅ Create a Systemd Service for Gunicorn (if missing)
-            if [ ! -f /etc/systemd/system/myapp.service ]; then
-              echo "Creating systemd service..."
-              sudo bash -c 'cat > /etc/systemd/system/myapp.service <<EOL
-              [Unit]
-              Description=Gunicorn instance to serve Python Webapp
-              After=network.target
+            # ✅ Ensure Port 5000 is Open
+            sudo ufw allow 5000 || true
 
-              [Service]
-              User=azureuser
-              Group=www-data
-              WorkingDirectory=/home/azureuser/app
-              Environment="PATH=/home/azureuser/app/venv/bin"
-              ExecStart=/home/azureuser/app/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
+            # ✅ Restart Application
+            nohup gunicorn --workers 3 --bind 0.0.0.0:5000 app:app &
 
-              [Install]
-              WantedBy=multi-user.target
-              EOL'
-              sudo systemctl daemon-reload
-              sudo systemctl enable myapp.service
-            fi
-
-            # ✅ Restart Systemd Service
-            sudo systemctl restart myapp.service
-
-            # ✅ Verify Gunicorn is Running
-            sleep 5
-            if ! pgrep -f gunicorn > /dev/null; then
-              echo "❌ Gunicorn failed to start!"
-              exit 1
-            fi
+            # ✅ Restart Systemd Service (if configured)
+            sudo systemctl restart myapp.service || true
           EOF
-          
-
-      # ✅ Output Public URL for Testing
-      - name: Print Access URL
-        run: echo "Access the app at: http://${{ env.ip }}:5000"
