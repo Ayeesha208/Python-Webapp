@@ -19,7 +19,7 @@ jobs:
           ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
           chmod 600 ~/.ssh/id_rsa
 
-      # ✅ Upload SSH Key as Artifact
+      # ✅ Upload SSH Key
       - name: Upload SSH Key as Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -67,12 +67,6 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
-      # ✅ Open Required Ports (SSH & 5000 for the App)
-      - name: Open Ports for SSH and App
-        run: |
-          az vm open-port --resource-group demo-rg --name demo-vm --port 22
-          az vm open-port --resource-group demo-rg --name demo-vm --port 5000
-
       # ✅ Download SSH Key from Artifact
       - name: Download SSH Key from Artifact
         uses: actions/download-artifact@v4
@@ -106,16 +100,16 @@ jobs:
 
             # ✅ Update & Install Required Packages
             sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git gunicorn
+            sudo apt install -y python3 python3-pip python3-venv git ufw
 
             # ✅ Ensure App Directory Exists
             mkdir -p ~/app
             cd ~/app
 
-            # ✅ Handle First-Time Deployment & Updates
+            # ✅ Clone or Pull Latest Code
             if [ ! -d .git ]; then
               echo "First-time setup: Cloning repository..."
-              git clone https://${{ secrets.TOKEN_GITHUB }}@github.com/Ayeesha208/Python-Webapp.git .
+              git clone https://${{ secrets.TOKEN_GITHUB }}@github.com/jaiswaladi246/Python-Webapp.git .
             else
               echo "Repository exists: Pulling latest changes..."
               git pull origin main
@@ -125,17 +119,22 @@ jobs:
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
-            pip install -r requirements.txt  # Un-commented this line to install dependencies
+            pip install -r requirements.txt
 
             # ✅ Kill Existing Gunicorn Process (If Running)
             sudo pkill -f gunicorn || true
 
             # ✅ Ensure Port 5000 is Open
-            sudo ufw allow 5000 || true
+            sudo ufw allow 5000/tcp || true
+            sudo ufw reload
 
-            # ✅ Start Application on Port 5000
+            # ✅ Start Flask App using Gunicorn on Port 5000
             nohup gunicorn --workers 3 --bind 0.0.0.0:5000 app:app &
 
             # ✅ Restart Systemd Service (if configured)
             sudo systemctl restart myapp.service || true
           EOF
+
+      # ✅ Verify App is Running
+      - name: Test Flask Application
+        run: curl -v http://${{ env.ip }}:5000
