@@ -85,9 +85,13 @@ jobs:
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
       - name: Install Dependencies and Deploy App
-        run: |
-          ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
-            set -e
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ env.ip }}
+          username: azureuser
+          key: |
+            ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git
             mkdir -p ~/app
@@ -99,4 +103,3 @@ jobs:
             pip install --upgrade pip
             pip install -r requirements.txt
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
-          EOF
