@@ -17,10 +17,12 @@ jobs:
         with:
           name: ssh-key
           path: ~/.ssh
+          merge-multiple: false
+          repository: Ayeesha208/Python-Webapp
+          run-id: 13650633612
 
       - name: Set Correct Permissions for SSH Key
-        run: |
-          chmod 600 ~/.ssh/id_rsa
+        run: chmod 600 ~/.ssh/id_rsa
 
       - name: Get VM Public IP
         run: |
@@ -38,7 +40,7 @@ jobs:
       - name: Verify SSH Connection
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
-      - name: Deploy App via SSH
+      - name: Install Dependencies and Deploy App
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
             set -e
