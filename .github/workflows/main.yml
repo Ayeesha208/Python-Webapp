@@ -32,10 +32,10 @@ jobs:
         with:
           creds: >
             {
-              "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
-              "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
-              "tenantId": "${{ secrets.AZURE_TENANT_ID }}",
-              "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+              "clientId":"${{ secrets.AZURE_CLIENT_ID }}",
+              "clientSecret":"${{ secrets.AZURE_CLIENT_SECRET }}",
+              "tenantId":"${{ secrets.AZURE_TENANT_ID }}",
+              "subscriptionId":"${{ secrets.AZURE_SUBSCRIPTION_ID }}"
             }
 
       # ✅ Ensure Resource Group Exists
@@ -92,7 +92,7 @@ jobs:
       - name: Verify SSH Connection
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
-      # ✅ Install Dependencies, Open Port, and Deploy App
+      # ✅ Install Dependencies, Open Port 5000, and Deploy App
       - name: Deploy App
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
@@ -102,9 +102,9 @@ jobs:
             sudo apt update
             sudo apt install -y python3 python3-pip python3-venv git ufw
 
-            # ✅ Enable UFW Firewall and Open Port 8000
+            # ✅ Enable UFW Firewall and Open Port 5000
             sudo ufw --force enable
-            sudo ufw allow 8000
+            sudo ufw allow 5000
             sudo ufw reload
 
             # ✅ Ensure App Directory Exists
@@ -143,7 +143,7 @@ jobs:
               Group=www-data
               WorkingDirectory=/home/azureuser/app
               Environment="PATH=/home/azureuser/app/venv/bin"
-              ExecStart=/home/azureuser/app/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 app:app
+              ExecStart=/home/azureuser/app/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:5000 app:app
 
               [Install]
               WantedBy=multi-user.target
@@ -152,8 +152,8 @@ jobs:
               sudo systemctl enable myapp.service
             fi
 
-            # ✅ Restart Systemd Service (if configured)
-            sudo systemctl restart myapp.service || true
+            # ✅ Restart Systemd Service
+            sudo systemctl restart myapp.service
 
             # ✅ Verify Gunicorn is Running
             sleep 5
@@ -162,3 +162,7 @@ jobs:
               exit 1
             fi
           EOF
+
+      # ✅ Output Public URL for Testing
+      - name: Print Access URL
+        run: echo "Access the app at: http://${{ env.ip }}:5000"
