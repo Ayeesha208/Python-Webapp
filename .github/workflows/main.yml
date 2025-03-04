@@ -67,6 +67,19 @@ jobs:
           echo "VM Public IP: $ip"
           echo "ip=$ip" >> $GITHUB_ENV
 
+      # ✅ Open Port 8000 in Azure NSG (if not already open)
+      - name: Allow Port 8000 in Azure NSG
+        run: |
+          az network nsg rule create \
+            --resource-group demo-rg \
+            --nsg-name demo-vmNSG \
+            --name AllowPort8000 \
+            --priority 100 \
+            --destination-port-ranges 8000 \
+            --direction Inbound \
+            --access Allow \
+            --protocol Tcp || true
+
       # ✅ Download SSH Key from Artifact
       - name: Download SSH Key from Artifact
         uses: actions/download-artifact@v4
@@ -92,7 +105,7 @@ jobs:
       - name: Verify SSH Connection
         run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} "echo SSH Connection Successful"
 
-      # ✅ Install Dependencies and Deploy App
+      # ✅ Install Dependencies, Enable Firewall, Open Port 8000, and Deploy App
       - name: Install Dependencies and Deploy App
         run: |
           ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa azureuser@${{ env.ip }} << 'EOF'
@@ -100,7 +113,12 @@ jobs:
 
             # ✅ Update & Install Required Packages
             sudo apt update
-            sudo apt install -y python3 python3-pip python3-venv git
+            sudo apt install -y python3 python3-pip python3-venv git ufw
+
+            # ✅ Enable UFW Firewall and Open Port 8000
+            sudo ufw --force enable
+            sudo ufw allow 8000
+            sudo ufw reload
 
             # ✅ Ensure App Directory Exists
             mkdir -p ~/app
@@ -119,17 +137,27 @@ jobs:
             python3 -m venv venv
             source venv/bin/activate
             pip install --upgrade pip
-           # pip install -r requirements.txt
+            # pip install -r requirements.txt  # ❌ Removed since you don't want it
 
             # ✅ Kill Existing Gunicorn Process (If Running)
             sudo pkill -f gunicorn || true
-
-            # ✅ Ensure Port 8000 is Open
-            sudo ufw allow 8000 || true
 
             # ✅ Restart Application
             nohup gunicorn --workers 3 --bind 0.0.0.0:8000 app:app &
 
             # ✅ Restart Systemd Service (if configured)
             sudo systemctl restart myapp.service || true
+
+            # ✅ Verify Gunicorn is Running
+            sleep 5
+            if ! pgrep -f gunicorn > /dev/null; then
+              echo "❌ Gunicorn failed to start!"
+              exit 1
+            fi
           EOF
+
+      # ✅ Verify Application is Accessible
+      - name: Check Application is Running
+        run: |
+          sleep 5
+          curl -sSf http://${{ env.ip }}:8000 || (echo "❌ Application not accessible!" && exit 1)
